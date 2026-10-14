@@ -1,0 +1,3 @@
+# Qt Widgets/Core/Gui without Qt Addons or WebEngine.
+PySide6-Essentials==6.8.3
+shiboken6==6.8.3
