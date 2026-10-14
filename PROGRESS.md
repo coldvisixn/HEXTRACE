@@ -96,3 +96,11 @@ Nmap-test skipped, сканер не считать проверенным. Scre
 WhatWeb/httpx/ffuf, NSE-профили, полноценные chains и secure secret storage.
 Добавлять постепенно с проверками, сохраняя working MVP; не запускать эксплуатацию
 автоматически и не использовать секреты без явного действия пользователя.
+
+## Скриншоты интерфейса
+
+По запросу пользователя созданы три настоящих offscreen-скриншота приложения:
+`build/screenshots/01-overview.png`, `02-map-inspector.png`, `03-notes.png`.
+Использованы явно демонстрационные данные и отдельная временная SQLite-база;
+сетевые проверки не запускались, пользовательские проекты не изменялись.
+Повторное создание: `QT_QPA_PLATFORM=offscreen /workspace/ghostmap-tools/bin/ghostmap-python scripts/screenshots.py`.
