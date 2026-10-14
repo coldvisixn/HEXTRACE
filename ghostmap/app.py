@@ -25,7 +25,7 @@ class Window(QMainWindow):
         self.setWindowIcon(QIcon(str(Path(__file__).parent/'assets/ghostmap.svg')))
         self.resize(1380,860)
         self.build_ui()
-        self.scanner.output.connect(self.log.insertPlainText)
+        self.scanner.output.connect(self.append_log)
         self.scanner.imported.connect(self.imported)
         self.scanner.complete.connect(self.scan_complete)
         self.scanner.busy_changed.connect(self.set_busy)
@@ -38,7 +38,7 @@ class Window(QMainWindow):
         self.vertical.restoreState(self.settings.value('vertical',b''))
         with self.store.db:
             self.store.db.execute("UPDATE tasks SET state='interrupted' WHERE state='running'")
-        self.load_projects()
+        self.load_projects(self.settings.value('project',0,type=int))
     def button(self,text,handler,primary=False):
         button=QPushButton(text); button.clicked.connect(handler)
         if primary: button.setObjectName('Primary')
@@ -91,21 +91,30 @@ class Window(QMainWindow):
         for widget in [self.target,self.profile,self.ports,self.run_button,self.cancel_button]: scan.addWidget(widget)
         layout.addLayout(scan)
         self.progress=QProgressBar(); self.progress.setRange(0,1); self.progress.setValue(0); layout.addWidget(self.progress)
-        tabs=QTabWidget(); self.log=QPlainTextEdit(); self.log.setReadOnly(True); self.log.document().setMaximumBlockCount(600)
+        tabs=QTabWidget(); self.log=QPlainTextEdit(); self.log.setReadOnly(True); self.log.setLineWrapMode(QPlainTextEdit.NoWrap); self.log.document().setMaximumBlockCount(600)
         tabs.addTab(self.log,'Tool output'); self.history=QListWidget(); tabs.addTab(self.history,'Task history'); layout.addWidget(tabs)
         self.vertical.addWidget(bottom)
         right=QWidget(); properties=QVBoxLayout(right); properties.addWidget(self.heading('Node inspector'))
-        self.node_title=QLabel('Select a node to inspect'); self.node_title.setWordWrap(True); properties.addWidget(self.node_title)
-        self.evidence=QLabel(); self.evidence.setWordWrap(True); properties.addWidget(self.evidence)
+        self.node_title=QLabel('Select a node to inspect'); self.node_title.setWordWrap(True); self.node_title.setTextFormat(Qt.PlainText); properties.addWidget(self.node_title)
+        self.evidence=QLabel(); self.evidence.setWordWrap(True); self.evidence.setTextFormat(Qt.PlainText); properties.addWidget(self.evidence)
         self.status=QComboBox(); self.status.addItems(['hypothesis','confirmed']); properties.addWidget(self.status)
         self.detail=QPlainTextEdit(); self.detail.setPlaceholderText('Notes / evidence. Do not enter passwords or tokens.'); properties.addWidget(self.detail)
         self.save_button=self.button('Save notes & status',self.save_node); self.save_button.setEnabled(False); properties.addWidget(self.save_button)
-        self.related=QLabel(); self.related.setWordWrap(True); properties.addWidget(self.related)
+        self.related=QLabel(); self.related.setWordWrap(True); self.related.setTextFormat(Qt.PlainText); properties.addWidget(self.related)
         self.horizontal.addWidget(right); self.horizontal.setSizes([200,900,280]); self.vertical.setSizes([560,240])
         self.nav.setCurrentRow(0)
         for title,shortcut,callback in [('New project','Ctrl+N',self.new_project),('Find','Ctrl+F',self.search.setFocus),('Fit map','Ctrl+0',self.graph.fit),('Save notes','Ctrl+S',self.save_node)]:
             action=QAction(title,self); action.setShortcut(QKeySequence(shortcut)); action.triggered.connect(callback); self.addAction(action)
         self.statusBar().showMessage('Create a project, add an authorized IP, then run Nmap.')
+    def append_log(self,text):
+        from PySide6.QtGui import QTextCursor
+        cursor=self.log.textCursor(); cursor.movePosition(QTextCursor.End); cursor.insertText(text)
+        overflow=self.log.document().characterCount()-100000
+        if overflow>0:
+            cursor.movePosition(QTextCursor.Start)
+            cursor.movePosition(QTextCursor.Right,QTextCursor.KeepAnchor,overflow)
+            cursor.removeSelectedText()
+        self.log.setTextCursor(cursor); self.log.ensureCursorVisible()
     def error(self,message): QMessageBox.warning(self,'GHOSTMAP',str(message))
     def load_projects(self,selected=None):
         self.projects.blockSignals(True); self.projects.clear()
@@ -224,7 +233,7 @@ class Window(QMainWindow):
     def scan_complete(self,result):
         if self.task_id:
             self.store.finish_task(self.task_id,result.lower()); self.task_id=None
-        self.refresh(); self.log.appendPlainText('\n'+result)
+        self.refresh(); self.append_log('\n'+result)
     def import_file(self):
         if not self.require_project(): return
         if self.scanner.busy or self.importer:
@@ -240,6 +249,7 @@ class Window(QMainWindow):
     def closeEvent(self,event):
         if self.scanner.busy or self.importer:
             self.error('Cancel the active scan and wait for the import to finish before closing.'); event.ignore(); return
+        self.settings.setValue('project',self.project_id or 0)
         self.settings.setValue('geometry',self.saveGeometry())
         self.settings.setValue('horizontal',self.horizontal.saveState())
         self.settings.setValue('vertical',self.vertical.saveState()); self.settings.sync()

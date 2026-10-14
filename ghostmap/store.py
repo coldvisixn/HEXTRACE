@@ -1,5 +1,6 @@
 """Bounded SQLite queries. Each worker opens its own connection."""
 import ipaddress
+from contextlib import contextmanager, nullcontext
 import sqlite3
 from pathlib import Path
 
@@ -7,6 +8,7 @@ KINDS = ("Host", "Service", "Finding", "Credential", "Access", "Note")
 
 class Store:
     def __init__(self, path):
+        self._batch = False
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.db = sqlite3.connect(self.path, timeout=15)
@@ -30,8 +32,18 @@ class Store:
         ''')
         columns = {r[1] for r in self.db.execute('PRAGMA table_info(nodes)')}
         if 'evidence' not in columns:
-            with self.db:
+            with self.write():
                 self.db.execute("ALTER TABLE nodes ADD COLUMN evidence TEXT NOT NULL DEFAULT ''")
+    def write(self):
+        return nullcontext() if self._batch else self.db
+    @contextmanager
+    def batch(self):
+        self._batch=True
+        try:
+            with self.db:
+                yield
+        finally:
+            self._batch=False
     def close(self):
         self.db.close()
     def projects(self):
@@ -40,7 +52,7 @@ class Store:
         name = name.strip()
         if not name or len(name) > 120:
             raise ValueError('Project name must contain 1–120 characters')
-        with self.db:
+        with self.write():
             return self.db.execute('INSERT INTO projects(name) VALUES (?)', (name,)).lastrowid
     def node(self, project, kind, label, detail='', status='hypothesis', x=0, y=0, evidence=''):
         if kind not in KINDS or status not in ('hypothesis','confirmed'):
@@ -48,7 +60,7 @@ class Store:
         label = label.strip()
         if not label or len(label) > 250:
             raise ValueError('Label must contain 1–250 characters')
-        with self.db:
+        with self.write():
             self.db.execute('INSERT INTO nodes(project,kind,label,detail,status,x,y,evidence) VALUES(?,?,?,?,?,?,?,?) '
                 'ON CONFLICT(project,kind,label) DO UPDATE SET evidence=excluded.evidence,status=excluded.status',
                 (project,kind,label,detail,status,x,y,evidence))
@@ -66,23 +78,23 @@ class Store:
         rows=self.db.execute('SELECT id FROM nodes WHERE project=? AND id IN (?,?)',(project,source,target)).fetchall()
         if len(rows)!=2:
             raise ValueError('Both nodes must belong to this project')
-        with self.db:
+        with self.write():
             self.db.execute('INSERT OR IGNORE INTO edges(project,source,target,label) VALUES(?,?,?,?)', (project,source,target,label))
     def edges(self, project, ids):
         if not ids: return []
         placeholders=','.join('?' for _ in ids)
         return self.db.execute(f'SELECT * FROM edges WHERE project=? AND source IN ({placeholders}) AND target IN ({placeholders})', (project,*ids,*ids)).fetchall()
     def position(self, node, x, y):
-        with self.db:
+        with self.write():
             self.db.execute('UPDATE nodes SET x=?,y=? WHERE id=?',(x,y,node))
     def details(self, node, detail, status):
-        with self.db:
+        with self.write():
             self.db.execute('UPDATE nodes SET detail=?,status=? WHERE id=?',(detail,status,node))
     def task(self, project, target, profile):
-        with self.db:
+        with self.write():
             return self.db.execute("INSERT INTO tasks(project,target,profile,state) VALUES(?,?,?,'running')",(project,target,profile)).lastrowid
     def finish_task(self, task, state, detail=''):
-        with self.db:
+        with self.write():
             self.db.execute('UPDATE tasks SET state=?,detail=? WHERE id=?',(state,detail,task))
     def tasks(self, project):
         return self.db.execute('SELECT * FROM tasks WHERE project=? ORDER BY id DESC LIMIT 100',(project,)).fetchall()

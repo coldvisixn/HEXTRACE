@@ -1,6 +1,6 @@
 from PySide6.QtCore import Qt, Signal, QPointF
-from PySide6.QtGui import QColor, QPen, QBrush, QPainter
-from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsItem, QGraphicsRectItem, QGraphicsSimpleTextItem, QGraphicsLineItem, QMenu
+from PySide6.QtGui import QColor, QPen, QBrush, QPainter, QPolygonF
+from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsItem, QGraphicsRectItem, QGraphicsSimpleTextItem, QGraphicsLineItem, QGraphicsPolygonItem, QMenu
 
 COLORS = {'Host':'#62dbc3','Service':'#74a9ff','Finding':'#ffb86b','Credential':'#ce9dff','Access':'#f57894','Note':'#aab9cb'}
 
@@ -37,14 +37,25 @@ class Edge(QGraphicsLineItem):
         source.edges.append(self); target.edges.append(self)
         self.setPen(QPen(QColor('#51627d'),1.5))
         self.setZValue(-1); self.setToolTip(label)
+        self.arrow=QGraphicsPolygonItem(self)
+        self.arrow.setBrush(QColor('#93a4ba')); self.arrow.setPen(QPen(Qt.NoPen))
         self.caption=QGraphicsSimpleTextItem(label,self)
         self.caption.setBrush(QColor('#93a4ba'))
         self.update_line()
     def update_line(self):
         from PySide6.QtCore import QLineF
         a=self.source.pos()+QPointF(110,38); b=self.target.pos()+QPointF(110,38)
-        self.setLine(QLineF(a,b))
-        self.caption.setPos((a+b)/2)
+        delta=b-a
+        if delta.manhattanLength()<1:
+            self.setLine(QLineF(a,b)); self.arrow.setPolygon(QPolygonF()); return
+        factor=min(110/abs(delta.x()) if delta.x() else 1e6,38/abs(delta.y()) if delta.y() else 1e6)
+        start=a+delta*factor; end=b-delta*factor
+        self.setLine(QLineF(start,end))
+        length=(delta.x()**2+delta.y()**2)**.5
+        unit=delta/length; normal=QPointF(-unit.y(),unit.x())
+        self.arrow.setPolygon(QPolygonF([end,end-unit*11+normal*5,end-unit*11-normal*5]))
+        midpoint=(start+end)/2
+        self.caption.setPos(midpoint.x()-self.caption.boundingRect().width()/2,midpoint.y()-18)
 
 class Graph(QGraphicsView):
     selected = Signal(object)
